@@ -17,36 +17,16 @@ from openai.embeddings_utils import distances_from_embeddings
 import numpy as np
 from openai.embeddings_utils import distances_from_embeddings, cosine_similarity
 
-import time # for time.sleep(delay_in_second) to avoid rate limit error
-
 from dotenv import load_dotenv  #remember to pip install python-dotenv
 load_dotenv()
 
-
-#define some switches
-SHF=0
-SJSU=1
-CRAWL=0
-
-MAX_TOKEN=800
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
+openai.api_key = "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"
 # Regex pattern to match a URL
-HTTP_URL_PATTERN = r'^http[s]*://.+'
+HTTP_URL_PATTERN = r'^http[s]{0,1}://.+$'
 
 # Define root domain to crawl
-#domain = "openai.com"
-#full_url = "https://openai.com/"
-
-
-if SHF:
-    domain = "countysheriff.sccgov.org"
-    full_url = "https://countysheriff.sccgov.org/services/sheriffs-office-records"
-if SJSU:
-    domain = "www.sjsu.edu"
-    full_url = "https://www.sjsu.edu"
-
+domain = "www.sjsu.edu"
+full_url = "https://www.sjsu.edu/"
 
 # Create a class to parse the HTML and get the hyperlinks
 class HyperlinkParser(HTMLParser):
@@ -69,7 +49,7 @@ class HyperlinkParser(HTMLParser):
 
 # Function to get the hyperlinks from a URL
 def get_hyperlinks(url):
-
+    
     # Try to open the URL and read the HTML
     try:
         # Open the URL and read the HTML
@@ -78,7 +58,7 @@ def get_hyperlinks(url):
             # If the response is not HTML, return an empty list
             if not response.info().get('Content-Type').startswith("text/html"):
                 return []
-
+            
             # Decode the HTML
             html = response.read().decode('utf-8')
     except Exception as e:
@@ -112,7 +92,11 @@ def get_domain_hyperlinks(local_domain, url):
         else:
             if link.startswith("/"):
                 link = link[1:]
-            elif link.startswith("#") or link.startswith("mailto:"):
+            elif (
+                link.startswith("#")
+                or link.startswith("mailto:")
+                or link.startswith("tel:")
+            ):
                 continue
             clean_link = "https://" + local_domain + "/" + link
 
@@ -182,8 +166,7 @@ def crawl(url):
                     queue.append(link)
                     seen.add(link)
 
-if CRAWL:
-    crawl(full_url)
+crawl(full_url)
 
 ################################################################################
 ### Step 5
@@ -205,7 +188,7 @@ def remove_newlines(serie):
 texts=[]
 
 # Get all the text files in the text directory
-for file in os.listdir("./text/" + domain + "/"):
+for file in os.listdir("text/" + domain + "/"):
 
     # Open the file and read the text
     with open("text/" + domain + "/" + file, "r", encoding="UTF-8") as f:
@@ -242,7 +225,7 @@ df.n_tokens.hist()
 ### Step 8
 ################################################################################
 
-max_tokens = MAX_TOKEN
+max_tokens = 500
 
 # Function to split the text into chunks of a maximum number of tokens
 def split_into_many(text, max_tokens = max_tokens):
@@ -252,7 +235,7 @@ def split_into_many(text, max_tokens = max_tokens):
 
     # Get the number of tokens for each sentence
     n_tokens = [len(tokenizer.encode(" " + sentence)) for sentence in sentences]
-
+    
     chunks = []
     tokens_so_far = 0
     chunk = []
@@ -260,7 +243,7 @@ def split_into_many(text, max_tokens = max_tokens):
     # Loop through the sentences and tokens joined together in a tuple
     for sentence, token in zip(sentences, n_tokens):
 
-        # If the number of tokens so far plus the number of tokens in the current sentence is greater
+        # If the number of tokens so far plus the number of tokens in the current sentence is greater 
         # than the max number of tokens, then add the chunk to the list of chunks and reset
         # the chunk and tokens so far
         if tokens_so_far + token > max_tokens:
@@ -268,7 +251,7 @@ def split_into_many(text, max_tokens = max_tokens):
             chunk = []
             tokens_so_far = 0
 
-        # If the number of tokens in the current sentence is greater than the max number of
+        # If the number of tokens in the current sentence is greater than the max number of 
         # tokens, go to the next sentence
         if token > max_tokens:
             continue
@@ -276,9 +259,13 @@ def split_into_many(text, max_tokens = max_tokens):
         # Otherwise, add the sentence to the chunk and add the number of tokens to the total
         chunk.append(sentence)
         tokens_so_far += token + 1
+        
+    # Add the last chunk to the list of chunks
+    if chunk:
+        chunks.append(". ".join(chunk) + ".")
 
     return chunks
-
+    
 
 shortened = []
 
@@ -292,7 +279,7 @@ for row in df.iterrows():
     # If the number of tokens is greater than the max number of tokens, split the text into chunks
     if row[1]['n_tokens'] > max_tokens:
         shortened += split_into_many(row[1]['text'])
-
+    
     # Otherwise, add the text to the list of shortened texts
     else:
         shortened.append( row[1]['text'] )
@@ -348,14 +335,14 @@ def create_context(
 
     # Sort by distance and add the text to the context until the context is too long
     for i, row in df.sort_values('distances', ascending=True).iterrows():
-
+        
         # Add the length of the text to the current length
         cur_len += row['n_tokens'] + 4
-
+        
         # If the context is too long, break
         if cur_len > max_len:
             break
-
+        
         # Else add it to the text that is being returned
         returns.append(row["text"])
 
@@ -366,10 +353,10 @@ def answer_question(
     df,
     model="text-davinci-003",
     question="Am I allowed to publish model outputs to Twitter, without a human review?",
-    max_len=1000, #original value 1800
+    max_len=1800,
     size="ada",
     debug=False,
-    max_tokens=150,  # original value is 150
+    max_tokens=150,
     stop_sequence=None
 ):
     """
@@ -407,31 +394,11 @@ def answer_question(
 ### Step 13
 ################################################################################
 
-#print(answer_question(df, question="What day is it?", debug=False))
+print(answer_question(df, question="Where is SJSU?", debug=False))
 
-if SHF:
-    print("\nWhat is the Sheriff's Office Mission Statement?\n")
-    print(answer_question(df, question="What is the Sheriff's Office Mission Statement?", debug=False))
-    time.sleep(3)
+print(answer_question(df, question="Information about the Welcome Center?"))
 
-    print("\nInformation about the Sheriff's Office Records?\n")
-    print(answer_question(df, question="Information about the Sheriff's Office Records?"))
-    time.sleep(3)
-
-    print("\nWhat is Custody?\n")
-    print(answer_question(df, question="What is Custody?"))
-
-if SJSU:
-    print("\nWhere is SJSU?\n")
-    print(answer_question(df, question="Where is SJSU?", debug=False))
-    time.sleep(3)
-
-    print("\ntell me about work at an SJSU auxiliary?\n")
-    print(answer_question(df, question="tell me about work at an SJSU auxiliary?"))
-    time.sleep(3)
-
-    print("\ntell me about vaccine booster\n")
-    print(answer_question(df, question="tell me about vaccine booster"))
+print(answer_question(df, question="What is EE104?"))
 
 while (True):
     prompt = input("\nEnter your question: \n")
